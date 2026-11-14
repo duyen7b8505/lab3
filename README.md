@@ -8,3 +8,6 @@ https://wokwi.com/projects/480688483729454081
 
 ## Link web 
 https://duyen7b8505.github.io/lab3/
+
+##Báo cáo
+https://ap.wps.com/cms/docs/d/cbTaqnkOLyAgTbRg?platform=pc&refer=copylink
