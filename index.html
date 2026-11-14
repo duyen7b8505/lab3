@@ -1,0 +1,761 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fall Detection - ESP32</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- MQTT.js -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: white;
+    padding: 25px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+header h1 {
+    color: #38bdf8;
+    font-size: 28px;
+}
+
+.subtitle {
+    color: #94a3b8;
+    margin-top: 7px;
+}
+
+.status {
+    background: #334155;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-weight: bold;
+}
+
+.online {
+    color: #4ade80;
+}
+
+.offline {
+    color: #f87171;
+}
+
+.section-title {
+    margin: 25px 0 15px;
+    font-size: 19px;
+    color: #38bdf8;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+}
+
+.card {
+    background: #1e293b;
+    padding: 22px;
+    border-radius: 13px;
+    border: 1px solid #334155;
+}
+
+.card p {
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+.value {
+    font-size: 30px;
+    font-weight: bold;
+    margin-top: 12px;
+    color: #38bdf8;
+}
+
+.unit {
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.safe {
+    color: #4ade80;
+}
+
+.danger {
+    color: #f87171;
+}
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+.chart-box {
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 13px;
+    min-width: 0;
+    height: 320px;
+}
+
+.chart-box h3 {
+    margin-bottom: 20px;
+    color: #e2e8f0;
+}
+
+.chart-container {
+    position: relative;
+    height: 240px;
+}
+
+.control-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+.control {
+    background: #1e293b;
+    padding: 25px;
+    text-align: center;
+    border-radius: 13px;
+}
+
+.control h3 {
+    margin-bottom: 18px;
+}
+
+button {
+    border: none;
+    padding: 13px 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: bold;
+    color: white;
+    margin: 5px;
+    transition: 0.2s;
+}
+
+button:hover {
+    opacity: 0.8;
+}
+
+.on {
+    background: #16a34a;
+}
+
+.off {
+    background: #dc2626;
+}
+
+.manual-status {
+    margin-top: 12px;
+    color: #94a3b8;
+}
+
+.alert-box {
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 13px;
+    margin-top: 20px;
+    border-left: 5px solid #22c55e;
+}
+
+.alert-box.warning {
+    border-left-color: #ef4444;
+    background: #451a1a;
+}
+
+footer {
+    text-align: center;
+    color: #64748b;
+    margin-top: 35px;
+    font-size: 13px;
+}
+
+@media(max-width: 850px) {
+    .grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .chart-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media(max-width: 500px) {
+    body {
+        padding: 12px;
+    }
+
+    .grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .card {
+        padding: 13px;
+    }
+
+    .value {
+        font-size: 23px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+    <div>
+        <h1>FALL DETECTION SYSTEM</h1>
+        <p class="subtitle">
+            Hệ thống giám sát và phát hiện té ngã sử dụng ESP32 + MPU6050
+        </p>
+    </div>
+
+    <div class="status" id="mqttStatus">
+        MQTT: ĐANG KẾT NỐI...
+    </div>
+</header>
+
+<!-- THÔNG SỐ CẢM BIẾN -->
+
+<h2 class="section-title">1. DỮ LIỆU CẢM BIẾN MPU6050</h2>
+
+<div class="grid">
+
+    <div class="card">
+        <p>Gia tốc trục X</p>
+        <div class="value" id="accX">0.00</div>
+        <span class="unit">m/s²</span>
+    </div>
+
+    <div class="card">
+        <p>Gia tốc trục Y</p>
+        <div class="value" id="accY">0.00</div>
+        <span class="unit">m/s²</span>
+    </div>
+
+    <div class="card">
+        <p>Gia tốc trục Z</p>
+        <div class="value" id="accZ">0.00</div>
+        <span class="unit">m/s²</span>
+    </div>
+
+    <div class="card">
+        <p>Gia tốc tổng</p>
+        <div class="value" id="accTotal">0.00</div>
+        <span class="unit">m/s²</span>
+    </div>
+
+    <div class="card">
+        <p>Góc nghiêng Roll</p>
+        <div class="value" id="roll">0.00</div>
+        <span class="unit">Độ (°)</span>
+    </div>
+
+    <div class="card">
+        <p>Góc nghiêng Pitch</p>
+        <div class="value" id="pitch">0.00</div>
+        <span class="unit">Độ (°)</span>
+    </div>
+
+    <div class="card">
+        <p>Trạng thái phát hiện</p>
+        <div class="value safe" id="fallStatus"
+             style="font-size:23px">
+            AN TOÀN
+        </div>
+    </div>
+
+    <div class="card">
+        <p>Thời gian cập nhật</p>
+        <div class="value" id="updateTime"
+             style="font-size:20px">
+            --
+        </div>
+    </div>
+
+</div>
+
+<!-- BIỂU ĐỒ -->
+
+<h2 class="section-title">2. BIỂU ĐỒ GIÁM SÁT THỜI GIAN THỰC</h2>
+
+<div class="chart-grid">
+
+    <div class="chart-box">
+        <h3>Biểu đồ gia tốc (m/s²)</h3>
+        <div class="chart-container">
+            <canvas id="accChart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-box">
+        <h3>Biểu đồ góc nghiêng (°)</h3>
+        <div class="chart-container">
+            <canvas id="angleChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+<!-- ĐIỀU KHIỂN -->
+
+<h2 class="section-title">3. ĐIỀU KHIỂN THIẾT BỊ - MANUAL</h2>
+
+<div class="control-grid">
+
+    <div class="control">
+        <h3>💡 ĐÈN CẢNH BÁO LED</h3>
+
+        <button class="on" onclick="controlDevice('led', 1)">
+            BẬT LED
+        </button>
+
+        <button class="off" onclick="controlDevice('led', 0)">
+            TẮT LED
+        </button>
+
+        <p class="manual-status" id="ledStatus">
+            Trạng thái: TẮT
+        </p>
+    </div>
+
+    <div class="control">
+        <h3>🔊 CÒI CẢNH BÁO</h3>
+
+        <button class="on" onclick="controlDevice('buzzer', 1)">
+            BẬT CÒI
+        </button>
+
+        <button class="off" onclick="controlDevice('buzzer', 0)">
+            TẮT CÒI
+        </button>
+
+        <p class="manual-status" id="buzzerStatus">
+            Trạng thái: TẮT
+        </p>
+    </div>
+
+</div>
+
+<!-- CẢNH BÁO -->
+
+<h2 class="section-title">4. TRẠNG THÁI HỆ THỐNG</h2>
+
+<div class="alert-box" id="alertBox">
+    <h3 id="alertTitle">HỆ THỐNG HOẠT ĐỘNG BÌNH THƯỜNG</h3>
+    <p id="alertMessage">
+        Chưa phát hiện dấu hiệu té ngã.
+    </p>
+</div>
+
+<footer>
+    FALL DETECTION SYSTEM | ESP32 - MPU6050 - MQTT
+    <br><br>
+    Đồ án môn học - Thiết kế hệ thống IoT
+</footer>
+
+</div>
+
+<script>
+
+// =====================================
+// 1. CẤU HÌNH MQTT BROKER
+// =====================================
+
+const BROKER = "wss://broker.hivemq.com:8884/mqtt";
+
+const TOPIC_DATA = "fall_detection/esp32/data";
+const TOPIC_CONTROL = "fall_detection/esp32/control";
+
+// Kết nối MQTT
+const client = mqtt.connect(BROKER, {
+    clientId: "FallWeb_" +
+        Math.random().toString(16).substring(2, 10),
+    clean: true,
+    connectTimeout: 10000,
+    reconnectPeriod: 3000
+});
+
+// =====================================
+// 2. TRẠNG THÁI KẾT NỐI
+// =====================================
+
+client.on("connect", function() {
+
+    console.log("MQTT Connected!");
+
+    const status = document.getElementById("mqttStatus");
+
+    status.innerText = "MQTT: ONLINE";
+    status.className = "status online";
+
+    client.subscribe(TOPIC_DATA);
+
+});
+
+client.on("offline", function() {
+    setMQTTStatus("MQTT: OFFLINE", "offline");
+});
+
+client.on("reconnect", function() {
+    setMQTTStatus("MQTT: ĐANG KẾT NỐI...", "offline");
+});
+
+client.on("error", function(error) {
+    console.log("MQTT Error:", error);
+    setMQTTStatus("MQTT: LỖI KẾT NỐI", "offline");
+});
+
+function setMQTTStatus(message, state) {
+    const status = document.getElementById("mqttStatus");
+    status.innerText = message;
+    status.className = "status " + state;
+}
+
+// =====================================
+// 3. KHỞI TẠO BIỂU ĐỒ
+// =====================================
+
+const labels = [];
+
+const accChart = new Chart(
+    document.getElementById("accChart"), {
+
+    type: "line",
+
+    data: {
+        labels: labels,
+
+        datasets: [
+            {
+                label: "Accel X",
+                data: [],
+                borderColor: "#38bdf8",
+                tension: 0.3
+            },
+            {
+                label: "Accel Y",
+                data: [],
+                borderColor: "#4ade80",
+                tension: 0.3
+            },
+            {
+                label: "Accel Z",
+                data: [],
+                borderColor: "#facc15",
+                tension: 0.3
+            }
+        ]
+    },
+
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+
+        plugins: {
+            legend: {
+                labels: {
+                    color: "white"
+                }
+            }
+        },
+
+        scales: {
+            x: {
+                ticks: { color: "#94a3b8" },
+                grid: { color: "#334155" }
+            },
+
+            y: {
+                ticks: { color: "#94a3b8" },
+                grid: { color: "#334155" }
+            }
+        }
+    }
+});
+
+// Biểu đồ góc nghiêng
+
+const angleChart = new Chart(
+    document.getElementById("angleChart"), {
+
+    type: "line",
+
+    data: {
+        labels: [],
+
+        datasets: [
+            {
+                label: "Roll",
+                data: [],
+                borderColor: "#a78bfa",
+                tension: 0.3
+            },
+            {
+                label: "Pitch",
+                data: [],
+                borderColor: "#fb7185",
+                tension: 0.3
+            }
+        ]
+    },
+
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+
+        plugins: {
+            legend: {
+                labels: {
+                    color: "white"
+                }
+            }
+        },
+
+        scales: {
+            x: {
+                ticks: { color: "#94a3b8" },
+                grid: { color: "#334155" }
+            },
+
+            y: {
+                ticks: { color: "#94a3b8" },
+                grid: { color: "#334155" }
+            }
+        }
+    }
+});
+
+// =====================================
+// 4. NHẬN DỮ LIỆU TỪ MQTT
+// =====================================
+
+client.on("message", function(topic, message) {
+
+    if (topic !== TOPIC_DATA) return;
+
+    try {
+
+        const data = JSON.parse(message.toString());
+
+        // Đọc dữ liệu cảm biến
+        const ax = Number(data.ax ?? 0);
+        const ay = Number(data.ay ?? 0);
+        const az = Number(data.az ?? 0);
+
+        const roll = Number(data.roll ?? 0);
+        const pitch = Number(data.pitch ?? 0);
+
+        const total = Number(
+            data.accTotal ??
+            data.total ??
+            Math.sqrt(ax*ax + ay*ay + az*az)
+        );
+
+        const fall = data.fall ?? false;
+
+        // Hiển thị dữ liệu số
+        document.getElementById("accX").innerText =
+            ax.toFixed(2);
+
+        document.getElementById("accY").innerText =
+            ay.toFixed(2);
+
+        document.getElementById("accZ").innerText =
+            az.toFixed(2);
+
+        document.getElementById("accTotal").innerText =
+            total.toFixed(2);
+
+        document.getElementById("roll").innerText =
+            roll.toFixed(2);
+
+        document.getElementById("pitch").innerText =
+            pitch.toFixed(2);
+
+        document.getElementById("updateTime").innerText =
+            new Date().toLocaleTimeString("vi-VN");
+
+        // Cập nhật trạng thái té ngã
+        updateFallStatus(fall);
+
+        // Cập nhật biểu đồ
+        updateCharts(ax, ay, az, roll, pitch);
+
+    } catch(error) {
+
+        console.log("Lỗi đọc dữ liệu:", error);
+
+    }
+
+});
+
+// =====================================
+// 5. CẬP NHẬT TRẠNG THÁI TÉ NGÃ
+// =====================================
+
+function updateFallStatus(fall) {
+
+    const status = document.getElementById("fallStatus");
+    const box = document.getElementById("alertBox");
+
+    const title = document.getElementById("alertTitle");
+    const message = document.getElementById("alertMessage");
+
+    if (fall === true || fall === 1 ||
+        fall === "true" || fall === "FALL") {
+
+        status.innerText = "PHÁT HIỆN TÉ NGÃ";
+        status.className = "value danger";
+
+        box.className = "alert-box warning";
+
+        title.innerText = "⚠ CẢNH BÁO TÉ NGÃ!";
+        message.innerText =
+            "Hệ thống phát hiện dấu hiệu té ngã. Cần kiểm tra người sử dụng.";
+
+    } else {
+
+        status.innerText = "AN TOÀN";
+        status.className = "value safe";
+
+        box.className = "alert-box";
+
+        title.innerText =
+            "HỆ THỐNG HOẠT ĐỘNG BÌNH THƯỜNG";
+
+        message.innerText =
+            "Chưa phát hiện dấu hiệu té ngã.";
+
+    }
+
+}
+
+// =====================================
+// 6. CẬP NHẬT BIỂU ĐỒ REALTIME
+// =====================================
+
+function updateCharts(ax, ay, az, roll, pitch) {
+
+    const time = new Date().toLocaleTimeString("vi-VN");
+
+    // Biểu đồ gia tốc
+    accChart.data.labels.push(time);
+
+    accChart.data.datasets[0].data.push(ax);
+    accChart.data.datasets[1].data.push(ay);
+    accChart.data.datasets[2].data.push(az);
+
+    // Biểu đồ góc nghiêng
+    angleChart.data.labels.push(time);
+
+    angleChart.data.datasets[0].data.push(roll);
+    angleChart.data.datasets[1].data.push(pitch);
+
+    // Giữ tối đa 20 điểm dữ liệu
+    if (accChart.data.labels.length > 20) {
+
+        accChart.data.labels.shift();
+
+        accChart.data.datasets.forEach(dataset => {
+            dataset.data.shift();
+        });
+
+        angleChart.data.labels.shift();
+
+        angleChart.data.datasets.forEach(dataset => {
+            dataset.data.shift();
+        });
+    }
+
+    accChart.update("none");
+    angleChart.update("none");
+
+}
+
+// =====================================
+// 7. ĐIỀU KHIỂN LED VÀ CÒI MANUAL
+// =====================================
+
+function controlDevice(device, state) {
+
+    if (!client.connected) {
+
+        alert("Chưa kết nối MQTT Broker!");
+        return;
+
+    }
+
+    const command = {
+
+        device: device,
+        state: state,
+        mode: "manual"
+
+    };
+
+    // Gửi lệnh lên MQTT Broker
+    client.publish(
+        TOPIC_CONTROL,
+        JSON.stringify(command),
+        { qos: 0 }
+    );
+
+    // Cập nhật giao diện
+    if (device === "led") {
+
+        document.getElementById("ledStatus").innerText =
+            "Trạng thái: " + (state ? "BẬT" : "TẮT");
+
+    }
+
+    if (device === "buzzer") {
+
+        document.getElementById("buzzerStatus").innerText =
+            "Trạng thái: " + (state ? "BẬT" : "TẮT");
+
+    }
+
+    console.log("Đã gửi lệnh:", command);
+
+}
+
+</script>
+
+</body>
+</html>
+v
